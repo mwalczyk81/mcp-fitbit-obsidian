@@ -10,6 +10,7 @@ sse              — for Claude.ai via Cloudflare Tunnel; set MCP_TRANSPORT=sse
 Entry point: `uv run run-server`  or  `uv run python src/server.py`
 """
 import asyncio
+import logging
 import os
 from datetime import date, timedelta
 from pathlib import Path
@@ -21,6 +22,8 @@ from src.fitbit_client import FitbitClient, HealthData
 from src.obsidian import write_health_data
 
 load_dotenv()
+
+_log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -47,10 +50,11 @@ def _client() -> FitbitClient:
 
 
 def _summarise(data: HealthData) -> str:
-    """Format a HealthData object as a human-readable string."""
+    """Format a HealthData object as a multi-line human-readable string."""
+    unit = data.weight_unit or "kg"
     lines = [f"Health data for {data.date}:"]
     if data.weight is not None:
-        lines.append(f"  Weight:          {data.weight} kg")
+        lines.append(f"  Weight:          {data.weight} {unit}")
     if data.sleep is not None:
         lines.append(f"  Sleep:           {data.sleep}")
     if data.steps is not None:
@@ -66,6 +70,21 @@ def _summarise(data: HealthData) -> str:
     return "\n".join(lines)
 
 
+def _brief(data: HealthData) -> str:
+    """Format key HealthData fields as a compact single-line string."""
+    unit = data.weight_unit or "kg"
+    parts = []
+    if data.weight is not None:
+        parts.append(f"Weight: {data.weight} {unit}")
+    if data.steps is not None:
+        parts.append(f"Steps: {data.steps:,}")
+    if data.sleep is not None:
+        parts.append(f"Sleep: {data.sleep}")
+    if data.calories_burned is not None:
+        parts.append(f"Cal: {data.calories_burned:,}")
+    return ", ".join(parts) if parts else "no data"
+
+
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
@@ -78,7 +97,7 @@ async def sync_today() -> str:
         client = _client()
         data = await asyncio.to_thread(client.get_health_data, today)
         path = await asyncio.to_thread(write_health_data, VAULT_DIR, data)
-        return f"Synced {today} → {path}"
+        return f"Synced {today} → {path}\n{_summarise(data)}"
     except Exception as exc:
         return f"Error syncing today: {exc}"
 
@@ -95,7 +114,7 @@ async def sync_yesterday() -> str:
         client = _client()
         data = await asyncio.to_thread(client.get_health_data, yesterday)
         path = await asyncio.to_thread(write_health_data, VAULT_DIR, data)
-        return f"Synced {yesterday} → {path}"
+        return f"Synced {yesterday} → {path}\n{_summarise(data)}"
     except Exception as exc:
         return f"Error syncing yesterday: {exc}"
 
@@ -111,7 +130,7 @@ async def sync_date(date_str: str) -> str:
         client = _client()
         data = await asyncio.to_thread(client.get_health_data, date_str)
         path = await asyncio.to_thread(write_health_data, VAULT_DIR, data)
-        return f"Synced {date_str} → {path}"
+        return f"Synced {date_str} → {path}\n{_summarise(data)}"
     except Exception as exc:
         return f"Error syncing {date_str}: {exc}"
 
@@ -141,7 +160,7 @@ async def sync_range(start_date: str, end_date: str) -> str:
             try:
                 data = await asyncio.to_thread(client.get_health_data, ds)
                 path = await asyncio.to_thread(write_health_data, VAULT_DIR, data)
-                results.append(f"  {ds}: synced → {path}")
+                results.append(f"  {ds}: {_brief(data)} → {path}")
             except Exception as exc:
                 results.append(f"  {ds}: error — {exc}")
             current += timedelta(days=1)
@@ -192,6 +211,9 @@ async def get_health_summary(start_date: str, end_date: str) -> str:
 async def get_weight_trend(days: int = 30) -> str:
     """Return weight trend stats (min, max, avg, net change) over recent days.
 
+    Uses a single Fitbit range API call instead of one call per day, avoiding
+    rate-limit exhaustion for windows longer than a few days.
+
     Args:
         days: How many days to look back, including today (default 30).
     """
@@ -200,17 +222,13 @@ async def get_weight_trend(days: int = 30) -> str:
         start = end - timedelta(days=days - 1)
 
         client = _client()
-        weights: list[tuple[str, float]] = []
-        current = start
-        while current <= end:
-            ds = current.isoformat()
-            try:
-                data = await asyncio.to_thread(client.get_health_data, ds)
-                if data.weight is not None:
-                    weights.append((ds, data.weight))
-            except Exception:
-                pass
-            current += timedelta(days=1)
+        try:
+            weights: list[tuple[str, float]] = await asyncio.to_thread(
+                client.get_weights, start.isoformat(), end.isoformat()
+            )
+        except Exception as exc:
+            _log.warning("get_weights failed for %s to %s: %s", start, end, exc)
+            weights = []
 
         if not weights:
             return f"No weight data found in the last {days} day(s)."

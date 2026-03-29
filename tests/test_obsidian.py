@@ -169,3 +169,63 @@ def test_preserves_other_sections(vault: Path, full_data: HealthData) -> None:
     # Old health data replaced, new data present
     assert "Weight:: 75.0 kg" not in content
     assert "Weight:: 80.5 kg" in content
+
+
+# ---------------------------------------------------------------------------
+# Test 5: Every write produces a file ending with exactly one newline
+# ---------------------------------------------------------------------------
+
+def test_file_ends_with_single_newline(vault: Path, full_data: HealthData) -> None:
+    """Every code path in write_health_data must produce a file that ends with
+    exactly one newline — no double-newline, no missing newline."""
+    # Path 1: new note created from scratch
+    path = write_health_data(vault, full_data)
+    raw = path.read_bytes()
+    assert raw.endswith(b"\n"), "New note does not end with a newline"
+    assert not raw.endswith(b"\n\n"), "New note ends with more than one newline"
+
+    # Path 2: health block replaced in existing note
+    write_health_data(vault, full_data)
+    raw = path.read_bytes()
+    assert raw.endswith(b"\n"), "Updated note does not end with a newline"
+    assert not raw.endswith(b"\n\n"), "Updated note ends with more than one newline"
+
+
+# ---------------------------------------------------------------------------
+# Test 6: Replace health block when it is the last section in the file
+# ---------------------------------------------------------------------------
+
+def test_replaces_health_block_at_end_of_file(vault: Path, full_data: HealthData) -> None:
+    """When the health block is the last content in the file (no trailing ## sections),
+    replacement must produce correct values and the file must end with exactly one newline.
+
+    This exercises the \\Z branch of _HEALTH_BLOCK_RE where rstrip() would previously
+    leave the file without a terminating newline.
+    """
+    note_path = vault / "01 - Daily Notes" / "2026-03-29.md"
+    note_path.write_text(
+        "---\n"
+        "date: 2026-03-29\n"
+        "---\n\n"
+        "# 2026-03-29\n\n"
+        "## 📊 Health Summary\n\n"
+        "Weight:: 75.0 kg\n"
+        "Steps:: 5,000\n",
+        encoding="utf-8",
+    )
+
+    write_health_data(vault, full_data)
+    content = note_path.read_text(encoding="utf-8")
+    raw = note_path.read_bytes()
+
+    # Old values replaced, new values present
+    assert "Weight:: 75.0 kg" not in content
+    assert "Weight:: 80.5 kg" in content
+    assert "Steps:: 10,000" in content
+
+    # Block appears exactly once
+    assert content.count("## 📊 Health Summary") == 1
+
+    # File must end with exactly one newline
+    assert raw.endswith(b"\n"), "File does not end with a newline"
+    assert not raw.endswith(b"\n\n"), "File ends with more than one newline"

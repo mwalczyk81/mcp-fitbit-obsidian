@@ -11,6 +11,8 @@ Behaviour:
     else (Mood, Tasks, Notes, …) untouched.
   - Note exists, no health block → insert before the first ## section, or
     append if there are no sections.
+
+All written files are guaranteed to end with exactly one newline character.
 """
 import re
 from pathlib import Path
@@ -33,8 +35,9 @@ def _format_health_block(data: HealthData) -> str:
     """Return the full health block string, ending with a single newline."""
     lines = [_HEALTH_HEADER, ""]
 
+    unit = data.weight_unit or "kg"
     if data.weight is not None:
-        lines.append(f"Weight:: {data.weight} kg")
+        lines.append(f"Weight:: {data.weight} {unit}")
     if data.workout is not None:
         lines.append(f"Workout:: {data.workout}")
     if data.sleep is not None:
@@ -58,7 +61,8 @@ def _create_new_note(data: HealthData) -> str:
     return (
         f"---\n"
         f"date: {data.date}\n"
-        f"tags: [daily-note]\n"
+        f"tags:\n"
+        f"  - daily-note\n"
         f"---\n\n"
         f"# {data.date}\n\n"
         f"{health_block}\n"
@@ -72,40 +76,44 @@ def write_health_data(vault_dir: Union[str, Path], data: HealthData) -> Path:
     """Write `data` into the appropriate daily note.
 
     Returns the path of the note that was written.
+    All written files end with exactly one newline.
     """
     note_path = Path(vault_dir) / "01 - Daily Notes" / f"{data.date}.md"
     health_block = _format_health_block(data)
 
     if not note_path.exists():
         note_path.parent.mkdir(parents=True, exist_ok=True)
-        note_path.write_text(_create_new_note(data), encoding="utf-8")
-        return note_path
-
-    existing = note_path.read_text(encoding="utf-8")
-
-    if _HEALTH_BLOCK_RE.search(existing):
-        # Replace existing block.  The regex match includes its own trailing \n
-        # (the one before the blank line that precedes the next ## heading), so
-        # we substitute with health_block as-is (which ends with \n).
-        new_content = _HEALTH_BLOCK_RE.sub(health_block.rstrip("\n"), existing)
+        new_content = _create_new_note(data)
     else:
-        # Insert before the first ## section heading, or append at end.
-        # We look for \n## to find the boundary just before a section heading.
-        section_match = re.search(r"\n## ", existing)
-        if section_match:
-            pos = section_match.start()
-            # Strip trailing newlines from the part before so we control spacing.
-            before = existing[:pos].rstrip("\n")
-            after = existing[pos:].lstrip("\n")
-            new_content = (
-                before
-                + "\n\n"
-                + health_block.rstrip("\n")
-                + "\n\n"
-                + after
-            )
+        existing = note_path.read_text(encoding="utf-8")
+
+        if _HEALTH_BLOCK_RE.search(existing):
+            # Replace existing block.  Strip trailing newline from the
+            # replacement string so the regex match boundary controls spacing.
+            new_content = _HEALTH_BLOCK_RE.sub(health_block.rstrip("\n"), existing)
         else:
-            new_content = existing.rstrip("\n") + "\n\n" + health_block
+            # Insert before the first ## section heading, or append at end.
+            # We look for \n## to find the boundary just before a section heading.
+            section_match = re.search(r"\n## ", existing)
+            if section_match:
+                pos = section_match.start()
+                # Strip trailing newlines from the part before so we control spacing.
+                before = existing[:pos].rstrip("\n")
+                after = existing[pos:].lstrip("\n")
+                new_content = (
+                    before
+                    + "\n\n"
+                    + health_block.rstrip("\n")
+                    + "\n\n"
+                    + after
+                )
+            else:
+                new_content = existing.rstrip("\n") + "\n\n" + health_block
+
+    # Guarantee exactly one trailing newline regardless of which path was taken.
+    # This handles the edge case where the health block is the last thing in the
+    # file (the \Z branch of the regex) and rstrip removed its trailing newline.
+    new_content = new_content.rstrip("\n") + "\n"
 
     note_path.write_text(new_content, encoding="utf-8")
     return note_path

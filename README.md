@@ -63,7 +63,9 @@ cp .env.example .env
 | `REDIRECT_URI` | Must match the Callback URL in your Fitbit app (`http://localhost:8080`) |
 | `MCP_TRANSPORT` | `stdio` (default) for Claude Desktop, or `sse` for Claude.ai |
 | `MCP_PORT` | Port for SSE transport (default `8765`) |
-| `TOKEN_FILE` | Path for stored OAuth tokens (default `fitbit_tokens.json`) |
+| `TOKEN_FILE` | **Absolute** path for stored OAuth tokens (e.g. `C:/path/to/mcp-fitbit-obsidian/fitbit_tokens.json`) |
+
+> **Why absolute?** Claude Desktop launches the server with an unpredictable working directory. A relative path like `fitbit_tokens.json` will not resolve correctly. Always set `TOKEN_FILE` to an absolute path, even if you keep the default filename.
 
 ### 3. Create a Fitbit app
 
