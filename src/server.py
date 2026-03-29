@@ -32,6 +32,7 @@ CLIENT_ID = os.getenv("CLIENT_ID", "")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET", "")
 VAULT_DIR = os.getenv("VAULT_DIR", "")
 TOKEN_FILE = Path(os.getenv("TOKEN_FILE", "fitbit_tokens.json"))
+LOCALE = os.getenv("LOCALE", "en_US")
 MCP_TRANSPORT = os.getenv("MCP_TRANSPORT", "stdio")
 MCP_PORT = int(os.getenv("MCP_PORT", "8765"))
 
@@ -46,7 +47,7 @@ mcp = FastMCP("fitbit-obsidian")
 # ---------------------------------------------------------------------------
 
 def _client() -> FitbitClient:
-    return FitbitClient(CLIENT_ID, CLIENT_SECRET, TOKEN_FILE)
+    return FitbitClient(CLIENT_ID, CLIENT_SECRET, TOKEN_FILE, LOCALE)
 
 
 def _summarise(data: HealthData) -> str:

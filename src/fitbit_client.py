@@ -27,8 +27,8 @@ class HealthData:
 
     Every field except `date` defaults to None so that partial Fitbit data
     (e.g. no weight log that day) never crashes the writer.
-    `weight_unit` defaults to "kg" and is updated from the activity summary
-    when the user's account uses imperial units.
+    `weight_unit` is derived from the locale passed to FitbitClient:
+    "en_US" → "lbs", anything else → "kg".
     """
 
     date: str
@@ -48,10 +48,16 @@ class FitbitClient:
         client_id: str,
         client_secret: str,
         token_file: Path = TOKEN_FILE,
+        locale: str = "en_US",
     ) -> None:
         self.client_id = client_id
         self.client_secret = client_secret
         self.token_file = Path(token_file)
+        # locale is sent as Accept-Language on every API request.
+        # Fitbit uses it to select measurement units:
+        #   en_US → imperial (lbs, miles, feet)
+        #   en_GB / any other → metric (kg, km)
+        self.locale = locale
         self._tokens: dict = self._load_tokens()
 
     # ------------------------------------------------------------------
@@ -94,14 +100,19 @@ class FitbitClient:
     # HTTP helpers
     # ------------------------------------------------------------------
 
+    def _headers(self) -> dict:
+        """Build the standard request headers for every Fitbit API call."""
+        return {
+            "Authorization": f"Bearer {self._tokens['access_token']}",
+            "Accept-Language": self.locale,
+        }
+
     def _get(self, url: str) -> dict:
         """Authenticated GET, retrying once after a 401 (expired token)."""
-        headers = {"Authorization": f"Bearer {self._tokens['access_token']}"}
-        resp = requests.get(url, headers=headers, timeout=30)
+        resp = requests.get(url, headers=self._headers(), timeout=30)
         if resp.status_code == 401:
             self._refresh_tokens()
-            headers = {"Authorization": f"Bearer {self._tokens['access_token']}"}
-            resp = requests.get(url, headers=headers, timeout=30)
+            resp = requests.get(url, headers=self._headers(), timeout=30)
         resp.raise_for_status()
         return resp.json()
 
@@ -115,8 +126,13 @@ class FitbitClient:
         Each metric is fetched independently; a failure on one endpoint never
         prevents the others from being collected.  Failures are logged as
         warnings so they are visible in logs without crashing the caller.
+
+        The weight unit is derived from self.locale (en_US → lbs, else kg)
+        because the API returns values in whichever unit system the
+        Accept-Language header requests.
         """
-        data = HealthData(date=for_date)
+        weight_unit = "lbs" if self.locale == "en_US" else "kg"
+        data = HealthData(date=for_date, weight_unit=weight_unit)
 
         # Weight
         try:
@@ -129,9 +145,7 @@ class FitbitClient:
         except Exception as exc:
             _log.warning("Failed to fetch weight for %s: %s", for_date, exc)
 
-        # Steps + calories (activity summary).
-        # Also detect weight unit from distanceUnit: "Mile" → imperial (lbs),
-        # anything else → metric (kg).
+        # Steps + calories (activity summary)
         try:
             payload = self._get(
                 f"{_BASE}/user/-/activities/date/{for_date}.json"
@@ -139,9 +153,6 @@ class FitbitClient:
             summary = payload.get("summary", {})
             data.steps = summary.get("steps")
             data.calories_burned = summary.get("caloriesOut")
-
-            dist_unit = summary.get("distanceUnit", "")
-            data.weight_unit = "lbs" if dist_unit == "Mile" else "kg"
 
             # Workout names from activity log
             activities = payload.get("activities", [])
