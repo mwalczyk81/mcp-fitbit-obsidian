@@ -200,13 +200,24 @@ class FitbitClient:
         except Exception as exc:
             _log.warning("Failed to fetch AZM for %s: %s", for_date, exc)
 
-        # Sleep
+        # Sleep - sum stages to match Fitbit app display
+        # (totalMinutesAsleep overcounts vs what the app shows)
         try:
             payload = self._get(
                 f"{_BASE}/user/-/sleep/date/{for_date}.json"
             )
-            total_minutes = payload.get("summary", {}).get("totalMinutesAsleep")
-            if total_minutes is not None:
+            stages = payload.get("summary", {}).get("stages", {})
+            if stages:
+                total_minutes = (
+                    stages.get("deep", 0)
+                    + stages.get("light", 0)
+                    + stages.get("rem", 0)
+                )
+            else:
+                # Fallback: classic sleep model (no stages data)
+                total_minutes = payload.get("summary", {}).get("totalMinutesAsleep")
+
+            if total_minutes:
                 hours, mins = divmod(total_minutes, 60)
                 data.sleep = f"{hours}h {mins}m"
         except Exception as exc:
