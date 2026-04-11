@@ -9,10 +9,11 @@ sse              — for Claude.ai via Cloudflare Tunnel; set MCP_TRANSPORT=sse
 
 Entry point: `uv run run-server`  or  `uv run python src/server.py`
 """
+
 import asyncio
 import logging
 import os
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -46,6 +47,7 @@ mcp = FastMCP("fitbit-obsidian")
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _client() -> FitbitClient:
     return FitbitClient(CLIENT_ID, CLIENT_SECRET, TOKEN_FILE, LOCALE)
@@ -90,6 +92,7 @@ def _brief(data: HealthData) -> str:
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
+
 
 @mcp.tool()
 async def sync_today() -> str:
@@ -277,6 +280,7 @@ def get_current_time() -> str:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     if MCP_TRANSPORT == "sse":

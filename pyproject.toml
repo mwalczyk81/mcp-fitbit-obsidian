@@ -8,6 +8,7 @@ dependencies = [
     "requests>=2.31.0",
     "python-dotenv>=1.0.0",
     "cherrypy>=18.0.0",
+    "tzdata>=2026.1",
 ]
 
 [project.scripts]
