@@ -12,8 +12,9 @@ Entry point: `uv run run-server`  or  `uv run python src/server.py`
 import asyncio
 import logging
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
@@ -252,6 +253,25 @@ async def get_weight_trend(days: int = 30) -> str:
         return "\n".join(lines)
     except Exception as exc:
         return f"Error: {exc}"
+
+
+@mcp.tool()
+def get_current_time() -> str:
+    """Return the current date and time in the US Central timezone (America/Chicago).
+
+    Automatically accounts for daylight saving time — displays CDT in summer
+    and CST in winter.
+    """
+    central = ZoneInfo("America/Chicago")
+    now = datetime.now(tz=central)
+    # Build the string manually to avoid platform-specific no-padding strftime
+    # directives (%-d/%-I on Linux vs %#d/%#I on Windows).
+    day_name = now.strftime("%A")
+    month_name = now.strftime("%B")
+    hour_12 = now.hour % 12 or 12  # convert 0 → 12 for midnight
+    am_pm = now.strftime("%p")
+    tz_abbr = now.strftime("%Z")  # "CDT" or "CST" depending on DST
+    return f"{day_name}, {month_name} {now.day}, {now.year} at {hour_12}:{now.minute:02d} {am_pm} {tz_abbr}"
 
 
 # ---------------------------------------------------------------------------
