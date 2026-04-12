@@ -227,17 +227,14 @@ async def get_weight_trend(days: int = 30) -> str:
         start = end - timedelta(days=days - 1)
 
         client = _client()
-        try:
-            weights: list[tuple[str, float]] = await asyncio.to_thread(
-                client.get_weights, start.isoformat(), end.isoformat()
-            )
-        except Exception as exc:
-            _log.warning("get_weights failed for %s to %s: %s", start, end, exc)
-            weights = []
+        weights: list[tuple[str, float]] = await asyncio.to_thread(
+            client.get_weights, start.isoformat(), end.isoformat()
+        )
 
         if not weights:
             return f"No weight data found in the last {days} day(s)."
 
+        unit = "lbs" if client.locale == "en_US" else "kg"
         values = [w for _, w in weights]
         avg = sum(values) / len(values)
         net = values[-1] - values[0]
@@ -248,10 +245,10 @@ async def get_weight_trend(days: int = 30) -> str:
 
         lines = [
             f"Weight trend — last {days} day(s) ({len(weights)} data point(s)):",
-            f"  Min:        {min_val:.1f} kg  ({min_date})",
-            f"  Max:        {max_val:.1f} kg  ({max_date})",
-            f"  Average:    {avg:.1f} kg",
-            f"  Net change: {net:+.1f} kg  ({weights[0][0]} → {weights[-1][0]})",
+            f"  Min:        {min_val:.1f} {unit}  ({min_date})",
+            f"  Max:        {max_val:.1f} {unit}  ({max_date})",
+            f"  Average:    {avg:.1f} {unit}",
+            f"  Net change: {net:+.1f} {unit}  ({weights[0][0]} → {weights[-1][0]})",
         ]
         return "\n".join(lines)
     except Exception as exc:
